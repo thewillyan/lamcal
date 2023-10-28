@@ -10,12 +10,12 @@ pub const Type = union(enum) {
     nat,
     fun: FnType,
 
-    pub fn eq(self: *const Type, other: *const Type) bool {
+    pub fn eql(self: *const Type, other: *const Type) bool {
         return switch (self.*) {
             .boolean => if (other.* == .boolean) true else false,
             .nat => if (other.* == .nat) true else false,
             .fun => |f1_type| switch (other.*) {
-                .fun => |*f2_type| f1_type.eq(f2_type),
+                .fun => |*f2_type| f1_type.eql(f2_type),
                 else => false,
             },
         };
@@ -37,8 +37,8 @@ pub const FnType = struct {
         return Type{ .fun = self };
     }
 
-    pub fn eq(self: *const FnType, other: *const FnType) bool {
-        return (self.in.*.eq(other.in) and self.out.*.eq(other.out));
+    pub fn eql(self: *const FnType, other: *const FnType) bool {
+        return (self.in.*.eql(other.in) and self.out.*.eql(other.out));
     }
 };
 
@@ -65,34 +65,34 @@ test "type equality test" {
     const f2 = FnType.init(&n, &n).intoType();
     const f3 = FnType.init(&b, &b).intoType();
     // equal
-    try expect(b.eq(&b));
-    try expect(n.eq(&n));
-    try expect(f1.eq(&f1));
-    try expect(f2.eq(&f2));
-    try expect(f3.eq(&f3));
+    try expect(b.eql(&b));
+    try expect(n.eql(&n));
+    try expect(f1.eql(&f1));
+    try expect(f2.eql(&f2));
+    try expect(f3.eql(&f3));
     // not equal
-    try expect(!b.eq(&n));
-    try expect(!b.eq(&f1));
-    try expect(!b.eq(&f2));
-    try expect(!b.eq(&f3));
+    try expect(!b.eql(&n));
+    try expect(!b.eql(&f1));
+    try expect(!b.eql(&f2));
+    try expect(!b.eql(&f3));
 
-    try expect(!n.eq(&b));
-    try expect(!n.eq(&f1));
-    try expect(!n.eq(&f2));
-    try expect(!n.eq(&f3));
+    try expect(!n.eql(&b));
+    try expect(!n.eql(&f1));
+    try expect(!n.eql(&f2));
+    try expect(!n.eql(&f3));
 
-    try expect(!f1.eq(&b));
-    try expect(!f1.eq(&n));
-    try expect(!f1.eq(&f2));
-    try expect(!f1.eq(&f3));
+    try expect(!f1.eql(&b));
+    try expect(!f1.eql(&n));
+    try expect(!f1.eql(&f2));
+    try expect(!f1.eql(&f3));
 
-    try expect(!f2.eq(&b));
-    try expect(!f2.eq(&n));
-    try expect(!f2.eq(&f1));
-    try expect(!f2.eq(&f3));
+    try expect(!f2.eql(&b));
+    try expect(!f2.eql(&n));
+    try expect(!f2.eql(&f1));
+    try expect(!f2.eql(&f3));
 
-    try expect(!f3.eq(&b));
-    try expect(!f3.eq(&n));
-    try expect(!f3.eq(&f1));
-    try expect(!f3.eq(&f2));
+    try expect(!f3.eql(&b));
+    try expect(!f3.eql(&n));
+    try expect(!f3.eql(&f1));
+    try expect(!f3.eql(&f2));
 }
