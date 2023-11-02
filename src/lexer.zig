@@ -25,6 +25,7 @@ pub const Token = union(enum) {
     pred,
     iszero,
     lambda,
+    absEnd,
     // a block start with '(' and ends with ')'
     blockStart,
     blockEnd,
@@ -65,6 +66,8 @@ pub const Token = union(enum) {
             .iszero
         else if (std.mem.eql(u8, slice, "lambda"))
             .lambda
+        else if (std.mem.eql(u8, slice, "end"))
+            .absEnd
         else if (std.mem.eql(u8, slice, "("))
             .blockStart
         else if (std.mem.eql(u8, slice, ")"))
@@ -94,6 +97,7 @@ pub const Token = union(enum) {
             .pred => (other.* == .pred),
             .iszero => (other.* == .iszero),
             .lambda => (other.* == .lambda),
+            .absEnd => (other.* == .absEnd),
             .blockStart => (other.* == .blockStart),
             .blockEnd => (other.* == .blockEnd),
             .typeAssignment => (other.* == .typeAssignment),
@@ -142,16 +146,16 @@ pub const Lexer = struct {
 
 test "lexer test" {
     const slice =
-        "( ( lambda f : Nat -> Bool . ( lambda n : Nat . f ( pred n ) ) ) iszero ) 42";
+        "( lambda f : ( Nat -> Bool ) . lambda n : Nat . f ( pred n ) end end iszero ) 42";
     const expected_tokens = [_]Token{
-        .blockStart,              .blockStart,     .lambda,
-        Token{ .variable = "f" }, .typeAssignment, .natType,
-        .arrow,                   .boolType,       .dot,
-        .blockStart,              .lambda,         Token{ .variable = "n" },
-        .typeAssignment,          .natType,        .dot,
-        Token{ .variable = "f" }, .blockStart,     .pred,
-        Token{ .variable = "n" }, .blockEnd,       .blockEnd,
-        .blockEnd,                .iszero,         .blockEnd,
+        .blockStart,              .lambda,     Token{ .variable = "f" },
+        .typeAssignment,          .blockStart, .natType,
+        .arrow,                   .boolType,   .blockEnd,
+        .dot,                     .lambda,     Token{ .variable = "n" },
+        .typeAssignment,          .natType,    .dot,
+        Token{ .variable = "f" }, .blockStart, .pred,
+        Token{ .variable = "n" }, .blockEnd,   .absEnd,
+        .absEnd,                  .iszero,     .blockEnd,
         Token{ .nat = 42 },
     };
 
