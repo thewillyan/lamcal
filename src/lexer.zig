@@ -111,6 +111,39 @@ pub const Token = union(enum) {
             },
         };
     }
+
+    pub fn format(
+        self: Token,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        try switch (self) {
+            .trueVal => writer.writeAll("true"),
+            .falseVal => writer.writeAll("false"),
+            .boolType => writer.writeAll("Bool"),
+            .natType => writer.writeAll("Nat"),
+            .arrow => writer.writeAll("->"),
+            .dot => writer.writeAll("."),
+            .ifStart => writer.writeAll("if"),
+            .ifThen => writer.writeAll("then"),
+            .ifElse => writer.writeAll("else"),
+            .ifEnd => writer.writeAll("endif"),
+            .suc => writer.writeAll("suc"),
+            .pred => writer.writeAll("pred"),
+            .iszero => writer.writeAll("iszero"),
+            .lambda => writer.writeAll("lambda"),
+            .absEnd => writer.writeAll("end"),
+            .blockStart => writer.writeAll("("),
+            .blockEnd => writer.writeAll(")"),
+            .typeAssignment => writer.writeAll(":"),
+            .nat => |n| writer.print("{}", .{n}),
+            .variable => |name| writer.writeAll(name),
+        };
+    }
 };
 
 pub const Lexer = struct {
@@ -146,17 +179,18 @@ pub const Lexer = struct {
 
 test "lexer test" {
     const slice =
-        "( lambda f : ( Nat -> Bool ) . lambda n : Nat . f ( pred n ) end end iszero ) 42";
+        "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . ( f ( pred n ) ) end end iszero ) 42 )";
     const expected_tokens = [_]Token{
-        .blockStart,              .lambda,     Token{ .variable = "f" },
-        .typeAssignment,          .blockStart, .natType,
-        .arrow,                   .boolType,   .blockEnd,
-        .dot,                     .lambda,     Token{ .variable = "n" },
-        .typeAssignment,          .natType,    .dot,
-        Token{ .variable = "f" }, .blockStart, .pred,
-        Token{ .variable = "n" }, .blockEnd,   .absEnd,
-        .absEnd,                  .iszero,     .blockEnd,
-        Token{ .nat = 42 },
+        .blockStart,              .blockStart,     .lambda,
+        Token{ .variable = "f" }, .typeAssignment, .blockStart,
+        .natType,                 .arrow,          .boolType,
+        .blockEnd,                .dot,            .lambda,
+        Token{ .variable = "n" }, .typeAssignment, .natType,
+        .dot,                     .blockStart,     Token{ .variable = "f" },
+        .blockStart,              .pred,           Token{ .variable = "n" },
+        .blockEnd,                .blockEnd,       .absEnd,
+        .absEnd,                  .iszero,         .blockEnd,
+        Token{ .nat = 42 },       .blockEnd,
     };
 
     var alloc = gpa(.{}){};
