@@ -1,17 +1,50 @@
-const Token = @import("lexer.zig").Token;
+const Expr = @import("expr.zig").Expr;
 
 pub const AstNode = union(enum) {
     ifNode: IfNode,
     lambda: LambdaNode,
     apl: AplNode,
-    literal: Token,
+    literal: LiteralNode,
 };
 
+pub const LiteralNode = union(enum) {
+    nat: u32,
+    boolean: bool,
+    variable: []const u8,
+    literal_fn: LiteralFn,
+
+    pub fn initNat(n: u32) LiteralNode {
+        return LiteralNode{ .nat = n };
+    }
+
+    pub fn initBool(b: bool) LiteralNode {
+        return LiteralNode{ .boolean = b };
+    }
+
+    pub fn initVar(name: []const u8) LiteralNode {
+        return LiteralNode{ .variable = name };
+    }
+
+    pub fn initSucLiteral() LiteralNode {
+        return LiteralNode{ .literal_fn = LiteralFn.suc };
+    }
+
+    pub fn initPredLiteral() LiteralNode {
+        return LiteralNode{ .literal_fn = LiteralFn.pred };
+    }
+
+    pub fn initIsZeroLiteral() LiteralNode {
+        return LiteralNode{ .literal_fn = LiteralFn.is_zero };
+    }
+};
+
+pub const LiteralFn = enum { suc, pred, is_zero };
+
 pub const TypeNode = union(enum) {
-    base: Token,
+    base: BaseType,
     arrow: ArrowType,
 
-    pub fn initBase(tk: Token) TypeNode {
+    pub fn initBase(tk: BaseType) TypeNode {
         return TypeNode{ .base = tk };
     }
 
@@ -22,6 +55,8 @@ pub const TypeNode = union(enum) {
         } };
     }
 };
+
+pub const BaseType = enum { nat, boolean };
 
 pub const ArrowType = struct {
     in: *const TypeNode,

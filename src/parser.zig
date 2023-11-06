@@ -2,7 +2,9 @@ const Token = @import("lexer.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
 
 const AstNode = @import("ast.zig").AstNode;
+const LiteralNode = @import("ast.zig").LiteralNode;
 const TypeNode = @import("ast.zig").TypeNode;
+const BaseType = @import("ast.zig").BaseType;
 const ArrowType = @import("ast.zig").ArrowType;
 const IfNode = @import("ast.zig").IfNode;
 const LambdaNode = @import("ast.zig").LambdaNode;
@@ -14,14 +16,13 @@ pub fn parse(lexer: *Lexer) error{InvalidSyntax}!?AstNode {
         .ifStart => AstNode{ .ifNode = try parseIfNode(lexer) },
         .lambda => AstNode{ .lambda = try parseLambdaNode(lexer) },
         .blockStart => AstNode{ .apl = try parseAplNode(lexer) },
-        .trueVal,
-        .falseVal,
-        .nat,
-        .variable,
-        .pred,
-        .suc,
-        .iszero,
-        => AstNode{ .literal = curr_token },
+        .trueVal => AstNode{ .literal = LiteralNode.initBool(true) },
+        .falseVal => AstNode{ .literal = LiteralNode.initBool(false) },
+        .nat => |n| AstNode{ .literal = LiteralNode.initNat(n) },
+        .variable => |name| AstNode{ .literal = LiteralNode.initVar(name) },
+        .pred => AstNode{ .literal = LiteralNode.initPredLiteral() },
+        .suc => AstNode{ .literal = LiteralNode.initSucLiteral() },
+        .iszero => AstNode{ .literal = LiteralNode.initIsZeroLiteral() },
         else => error.InvalidSyntax,
     };
     return root;
@@ -48,7 +49,8 @@ fn parseIfNode(lexer: *Lexer) error{InvalidSyntax}!IfNode {
 fn parseTypeNode(lexer: *Lexer) error{InvalidSyntax}!TypeNode {
     if (lexer.next()) |tk| {
         switch (tk) {
-            .natType, .boolType => return TypeNode.initBase(tk),
+            .natType => return TypeNode.initBase(BaseType.nat),
+            .boolType => return TypeNode.initBase(BaseType.boolean),
             .blockStart => {
                 const in = try parseTypeNode(lexer);
                 var next = lexer.next() orelse return error.InvalidSyntax;
