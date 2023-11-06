@@ -1,10 +1,20 @@
 const Expr = @import("expr.zig").Expr;
+const Val = @import("expr.zig").Val;
+const Fn = @import("expr.zig").Fn;
+const Var = @import("expr.zig").Var;
 
 pub const AstNode = union(enum) {
     ifNode: IfNode,
     lambda: LambdaNode,
     apl: AplNode,
     literal: LiteralNode,
+
+    pub fn intoExpr(self: AstNode, context: anytype) !Expr {
+        switch (self) {
+            .literal => |lit| return lit.intoExpr(context),
+            else => return error.Uninplemented,
+        }
+    }
 };
 
 pub const LiteralNode = union(enum) {
@@ -35,6 +45,22 @@ pub const LiteralNode = union(enum) {
 
     pub fn initIsZeroLiteral() LiteralNode {
         return LiteralNode{ .literal_fn = LiteralFn.is_zero };
+    }
+
+    pub fn intoExpr(self: LiteralNode, context: anytype) !Expr {
+        return switch (self) {
+            .nat => |n| Val.initNat(n).intoExpr(),
+            .boolean => |b| Val.initBoolean(b).intoExpr(),
+            .variable => |name| Var.init(
+                name,
+                context.get() orelse return error.UnboundVariable,
+            ).intoExpr(),
+            .literal_fn => |lit_fn| switch (lit_fn) {
+                .suc => @as(Fn, .suc).intoExpr(),
+                .pred => @as(Fn, .pred).intoExpr(),
+                .is_zero => @as(Fn, .is_zero).intoExpr(),
+            },
+        };
     }
 };
 
@@ -79,3 +105,5 @@ pub const AplNode = struct {
     f: *const AstNode,
     arg: *const AstNode,
 };
+
+test "base test" {}
