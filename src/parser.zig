@@ -1,52 +1,12 @@
-const Token = @import("./lexer.zig").Token;
-const Lexer = @import("./lexer.zig").Lexer;
-const std = @import("std");
-const gpa = std.heap.GeneralPurposeAllocator;
+const Token = @import("lexer.zig").Token;
+const Lexer = @import("lexer.zig").Lexer;
 
-pub const AstNode = union(enum) {
-    ifNode: IfNode,
-    lambda: LambdaNode,
-    apl: AplNode,
-    literal: Token,
-};
-
-pub const TypeNode = union(enum) {
-    base: Token,
-    arrow: ArrowType,
-
-    pub fn initBase(tk: Token) TypeNode {
-        return TypeNode{ .base = tk };
-    }
-
-    pub fn initArrow(in: *const TypeNode, out: *const TypeNode) TypeNode {
-        return TypeNode{ .arrow = ArrowType{
-            .in = in,
-            .out = out,
-        } };
-    }
-};
-
-pub const ArrowType = struct {
-    in: *const TypeNode,
-    out: *const TypeNode,
-};
-
-pub const IfNode = struct {
-    p: *const AstNode,
-    then: *const AstNode,
-    otherwise: *const AstNode,
-};
-
-pub const LambdaNode = struct {
-    var_name: []const u8,
-    ty: TypeNode,
-    body: *const AstNode,
-};
-
-pub const AplNode = struct {
-    f: *const AstNode,
-    arg: *const AstNode,
-};
+const AstNode = @import("ast.zig").AstNode;
+const TypeNode = @import("ast.zig").TypeNode;
+const ArrowType = @import("ast.zig").ArrowType;
+const IfNode = @import("ast.zig").IfNode;
+const LambdaNode = @import("ast.zig").LambdaNode;
+const AplNode = @import("ast.zig").AplNode;
 
 pub fn parse(lexer: *Lexer) error{InvalidSyntax}!?AstNode {
     const curr_token = lexer.*.next() orelse return null;
@@ -145,6 +105,7 @@ fn parseAplNode(lexer: *Lexer) error{InvalidSyntax}!AplNode {
 }
 
 test {
+    const gpa = @import("std").heap.GeneralPurposeAllocator;
     const slice =
         "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . ( f ( pred n ) ) end end iszero ) 42 )";
     var alloc = gpa(.{}){};
