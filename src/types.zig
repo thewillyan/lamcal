@@ -1,5 +1,8 @@
 const std = @import("std");
+const alloc = std.testing.allocator;
+const Allocator = std.mem.Allocator;
 const expect = std.testing.expect;
+
 const expr = @import("expr.zig");
 const Fn = expr.Fn;
 const Expr = expr.Expr;
@@ -9,6 +12,20 @@ pub const Type = union(enum) {
     boolean,
     nat,
     fun: FnType,
+
+    pub fn natPtr(allocator: Allocator) error{OutOfMemory}!*Type {
+        var nat = try allocator.create(Type);
+        errdefer allocator.destroy(nat);
+        nat.* = @as(Type, .nat);
+        return nat;
+    }
+
+    pub fn boolPtr(allocator: Allocator) error{OutOfMemory}!*Type {
+        var boolean = try allocator.create(Type);
+        errdefer allocator.destroy(boolean);
+        boolean.* = @as(Type, .boolean);
+        return boolean;
+    }
 
     pub fn eql(self: *const Type, other: *const Type) bool {
         return switch (self.*) {
@@ -20,17 +37,43 @@ pub const Type = union(enum) {
             },
         };
     }
+
+    pub fn deinit(self: *Type, allocator: Allocator) void {
+        switch (self.*) {
+            .fun => |*fun| fun.deinit(allocator),
+            else => {},
+        }
+    }
+
+    pub fn deinitContext(context: anytype, allocator: Allocator) void {
+        var iter = context.iterator();
+        while (iter.next()) |entry| {
+            for (entry.value_ptr.*.items) |ty_ptr| {
+                ty_ptr.*.deinit(allocator);
+                allocator.destroy(ty_ptr);
+            }
+            entry.value_ptr.*.deinit();
+        }
+    }
 };
 
 pub const FnType = struct {
-    in: *const Type,
-    out: *const Type,
+    in: *Type,
+    out: *Type,
 
-    pub fn init(in: *const Type, out: *const Type) FnType {
+    pub fn init(in: *Type, out: *Type) FnType {
         return FnType{
             .in = in,
             .out = out,
         };
+    }
+
+    pub fn deinit(self: *FnType, allocator: Allocator) void {
+        self.in.deinit(allocator);
+        self.out.deinit(allocator);
+
+        allocator.destroy(self.in);
+        allocator.destroy(self.out);
     }
 
     pub fn intoType(self: FnType) Type {
@@ -43,15 +86,20 @@ pub const FnType = struct {
 };
 
 test "types test" {
-    const n: Type = Type.nat;
-    const b: Type = Type.boolean;
-    const f1 = FnType.init(&n, &b).intoType();
-    const f2 = FnType.init(&n, &n).intoType();
-    const f3 = FnType.init(&b, &b).intoType();
-    const f4 = FnType.init(&f2, &f2).intoType();
+    var f1 = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
+        .intoType();
+    defer f1.deinit(alloc);
+
+    var f2 = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
+        .intoType();
+    defer f2.deinit(alloc);
+
+    var f3 = FnType.init(try Type.boolPtr(alloc), try Type.boolPtr(alloc))
+        .intoType();
+    defer f3.deinit(alloc);
+
+    var f4 = FnType.init(&f2, &f2).intoType();
     // verify types
-    try std.testing.expect(n == .nat);
-    try std.testing.expect(b == .boolean);
     try std.testing.expect(f1 == .fun);
     try std.testing.expect(f2 == .fun);
     try std.testing.expect(f3 == .fun);
@@ -59,11 +107,11 @@ test "types test" {
 }
 
 test "type equality test" {
-    const n: Type = Type.nat;
-    const b: Type = Type.boolean;
-    const f1 = FnType.init(&n, &b).intoType();
-    const f2 = FnType.init(&n, &n).intoType();
-    const f3 = FnType.init(&b, &b).intoType();
+    var n: Type = Type.nat;
+    var b: Type = Type.boolean;
+    var f1 = FnType.init(&n, &b).intoType();
+    var f2 = FnType.init(&n, &n).intoType();
+    var f3 = FnType.init(&b, &b).intoType();
     // equal
     try expect(b.eql(&b));
     try expect(n.eql(&n));

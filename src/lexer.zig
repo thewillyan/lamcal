@@ -163,10 +163,10 @@ pub const Lexer = struct {
         return Lexer{ .tokens = token_list, .index = 0 };
     }
 
-    pub fn next(self: *Lexer) ?Token {
+    pub fn next(self: *Lexer) ?*Token {
         if (self.*.index < self.*.tokens.items.len) {
             defer self.*.index += 1;
-            return self.*.tokens.items[self.*.index];
+            return &self.*.tokens.items[self.*.index];
         } else {
             return null;
         }
@@ -197,7 +197,7 @@ test "lexer test" {
     var lexer = try Lexer.tokenize(slice, alloc.allocator());
     defer lexer.deinit();
     var i: usize = 0;
-    while (lexer.next()) |*token| : (i += 1) {
+    while (lexer.next()) |token| : (i += 1) {
         try std.testing.expect(expected_tokens[i].eql(token));
     }
 }
