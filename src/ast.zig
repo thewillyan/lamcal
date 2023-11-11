@@ -8,8 +8,11 @@ const Var = @import("expr.zig").Var;
 const IfExpr = @import("expr.zig").IfExpr;
 const Abs = @import("expr.zig").Abs;
 const AplExpr = @import("expr.zig").AplExpr;
+
 const Type = @import("types.zig").Type;
 const FnType = @import("types.zig").FnType;
+
+const Context = @import("context.zig").Context;
 
 pub const AstParseError = error{ UnboundVariable, OutOfMemory };
 
@@ -21,7 +24,7 @@ pub const Ast = struct {
         return Ast{ .root = root, .allocator = allocator };
     }
 
-    pub fn intoExpr(self: *const Ast, context: anytype) AstParseError!Expr {
+    pub fn intoExpr(self: *const Ast, context: *Context) AstParseError!Expr {
         return self.root.intoExpr(context, self.allocator);
     }
 
@@ -36,7 +39,7 @@ pub const AstNode = union(enum) {
     apl: AplNode,
     literal: LiteralNode,
 
-    pub fn intoExpr(self: AstNode, context: anytype, allocator: Allocator) AstParseError!Expr {
+    pub fn intoExpr(self: AstNode, context: *Context, allocator: Allocator) AstParseError!Expr {
         return switch (self) {
             .ifNode => |ifnode| ifnode.intoExpr(context, allocator),
             .lambda => |lambda| lambda.intoExpr(context, allocator),
@@ -85,15 +88,12 @@ pub const LiteralNode = union(enum) {
         return LiteralNode{ .literal_fn = LiteralFn.is_zero };
     }
 
-    pub fn intoExpr(self: LiteralNode, context: anytype) AstParseError!Expr {
+    pub fn intoExpr(self: LiteralNode, context: *Context) AstParseError!Expr {
         return switch (self) {
             .nat => |n| Val.initNat(n).intoExpr(),
             .boolean => |b| Val.initBoolean(b).intoExpr(),
             .variable => |name| varblk: {
-                const stack_ptr = context.getPtr(name) orelse
-                    return error.UnboundVariable;
-                const var_ty = stack_ptr.*.getLastOrNull() orelse
-                    return error.UnboundVariable;
+                const var_ty = try context.getVarType(name);
                 break :varblk Var.init(name, var_ty).intoExpr();
             },
             .literal_fn => |lit_fn| switch (lit_fn) {
@@ -171,7 +171,7 @@ pub const IfNode = struct {
     then: *AstNode,
     otherwise: *AstNode,
 
-    pub fn intoExpr(self: IfNode, context: anytype, allocator: Allocator) AstParseError!Expr {
+    pub fn intoExpr(self: IfNode, context: *Context, allocator: Allocator) AstParseError!Expr {
         var p = try allocator.create(Expr);
         errdefer allocator.destroy(p);
         p.* = try self.p.intoExpr(context, allocator);
@@ -206,21 +206,10 @@ pub const LambdaNode = struct {
     ty: TypeNode,
     body: *AstNode,
 
-    pub fn intoExpr(self: LambdaNode, context: anytype, allocator: Allocator) AstParseError!Expr {
+    pub fn intoExpr(self: LambdaNode, context: *Context, allocator: Allocator) AstParseError!Expr {
         // add variable to the context.
-        var ty = try allocator.create(Type);
-        errdefer allocator.destroy(ty);
-        ty.* = try self.ty.intoType(allocator);
-
-        var value = try context.getOrPut(self.var_name);
-        if (!value.found_existing) {
-            value.value_ptr.* = std.ArrayList(*Type).init(allocator);
-        }
-        try value.value_ptr.*.append(ty);
-        defer _ = value.value_ptr.*.pop();
-        const ty_ptr = value.value_ptr.*.getLast();
-        defer allocator.destroy(ty_ptr);
-        defer ty_ptr.*.deinit(allocator);
+        const ty = try context.addVar(self.var_name, try self.ty.intoType(allocator));
+        defer context.popVar(self.var_name);
 
         var body = try allocator.create(Expr);
         errdefer allocator.destroy(body);
@@ -228,7 +217,7 @@ pub const LambdaNode = struct {
         errdefer body.deinit(allocator);
 
         return Abs.init(
-            Var.init(self.var_name, ty_ptr),
+            Var.init(self.var_name, ty),
             body,
         ).intoExpr();
     }
@@ -272,7 +261,6 @@ pub const AplNode = struct {
 
 test "AST into expr test" {
     const alloc = std.testing.allocator;
-    const strMap = std.StringHashMap;
     const Lexer = @import("lexer.zig").Lexer;
     const parser = @import("parser.zig");
 
@@ -284,10 +272,9 @@ test "AST into expr test" {
     var ast = try parser.parse(&lexer, alloc);
     defer ast.deinit();
 
-    var map = strMap(std.ArrayList(*Type)).init(alloc);
-    defer map.deinit();
-    defer Type.deinitContext(map, alloc);
+    var context = Context.init(alloc);
+    defer context.deinit();
 
-    var expr = try ast.intoExpr(&map);
+    var expr = try ast.intoExpr(&context);
     defer expr.deinit(alloc);
 }
