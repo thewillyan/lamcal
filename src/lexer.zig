@@ -179,17 +179,21 @@ pub const Lexer = struct {
 
 test "lexer test" {
     const slice =
-        "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . ( f ( pred n ) ) end end iszero ) 42 )";
+        "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . if ( iszero n ) then ( f n ) else ( f ( pred n ) ) endif end end iszero ) 42 )";
     const expected_tokens = [_]Token{
-        .blockStart,              .blockStart,     .lambda,
-        Token{ .variable = "f" }, .typeAssignment, .blockStart,
-        .natType,                 .arrow,          .boolType,
-        .blockEnd,                .dot,            .lambda,
-        Token{ .variable = "n" }, .typeAssignment, .natType,
-        .dot,                     .blockStart,     Token{ .variable = "f" },
-        .blockStart,              .pred,           Token{ .variable = "n" },
-        .blockEnd,                .blockEnd,       .absEnd,
-        .absEnd,                  .iszero,         .blockEnd,
+        .blockStart,              .blockStart,              .lambda,
+        Token{ .variable = "f" }, .typeAssignment,          .blockStart,
+        .natType,                 .arrow,                   .boolType,
+        .blockEnd,                .dot,                     .lambda,
+        Token{ .variable = "n" }, .typeAssignment,          .natType,
+        .dot,                     .ifStart,                 .blockStart,
+        .iszero,                  Token{ .variable = "n" }, .blockEnd,
+        .ifThen,                  .blockStart,              Token{ .variable = "f" },
+        Token{ .variable = "n" }, .blockEnd,                .ifElse,
+        .blockStart,              Token{ .variable = "f" }, .blockStart,
+        .pred,                    Token{ .variable = "n" }, .blockEnd,
+        .blockEnd,                .ifEnd,                   .absEnd,
+        .absEnd,                  .iszero,                  .blockEnd,
         Token{ .nat = 42 },       .blockEnd,
     };
 

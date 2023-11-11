@@ -175,14 +175,17 @@ pub const IfNode = struct {
         var p = try allocator.create(Expr);
         errdefer allocator.destroy(p);
         p.* = try self.p.intoExpr(context, allocator);
+        errdefer p.deinit(allocator);
 
         var then = try allocator.create(Expr);
         errdefer allocator.destroy(then);
         then.* = try self.then.intoExpr(context, allocator);
+        errdefer then.deinit(allocator);
 
         var otherwise = try allocator.create(Expr);
         errdefer allocator.destroy(otherwise);
         otherwise.* = try self.otherwise.intoExpr(context, allocator);
+        errdefer then.deinit(allocator);
 
         return IfExpr.init(p, then, otherwise).intoExpr();
     }

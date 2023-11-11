@@ -43,6 +43,7 @@ fn parseIfNode(lexer: *Lexer, allocator: Allocator) ParseError!IfNode {
     var p = try allocator.create(AstNode);
     errdefer allocator.destroy(p);
     p.* = try parseAstNode(lexer, allocator);
+    errdefer p.*.deinit(allocator);
 
     var next = lexer.next() orelse return error.InvalidSyntax;
     if (next.* != .ifThen) return error.InvalidSyntax;
@@ -50,6 +51,7 @@ fn parseIfNode(lexer: *Lexer, allocator: Allocator) ParseError!IfNode {
     var t = try allocator.create(AstNode);
     errdefer allocator.destroy(t);
     t.* = try parseAstNode(lexer, allocator);
+    errdefer t.*.deinit(allocator);
 
     next = lexer.next() orelse return error.InvalidSyntax;
     if (next.* != .ifElse) return error.InvalidSyntax;
@@ -57,9 +59,10 @@ fn parseIfNode(lexer: *Lexer, allocator: Allocator) ParseError!IfNode {
     var o = try allocator.create(AstNode);
     errdefer allocator.destroy(o);
     o.* = try parseAstNode(lexer, allocator);
+    errdefer o.*.deinit(allocator);
 
     next = lexer.next() orelse return error.InvalidSyntax;
-    return if (next.* == .ifEnd)
+    return if (next.* != .ifEnd)
         error.InvalidSyntax
     else
         IfNode{ .p = p, .then = t, .otherwise = o };
@@ -75,6 +78,7 @@ fn parseTypeNode(lexer: *Lexer, allocator: Allocator) ParseError!TypeNode {
             var in = try allocator.create(TypeNode);
             errdefer allocator.destroy(in);
             in.* = try parseTypeNode(lexer, allocator);
+            errdefer in.deinit(allocator);
 
             var next = lexer.next() orelse return error.InvalidSyntax;
             if (next.* != .arrow) return error.InvalidSyntax;
@@ -82,6 +86,7 @@ fn parseTypeNode(lexer: *Lexer, allocator: Allocator) ParseError!TypeNode {
             var out = try allocator.create(TypeNode);
             errdefer allocator.destroy(out);
             out.* = try parseTypeNode(lexer, allocator);
+            errdefer out.deinit(allocator);
 
             next = lexer.next() orelse return error.InvalidSyntax;
             if (next.* != .blockEnd) return error.InvalidSyntax;
@@ -103,7 +108,8 @@ fn parseLambdaNode(lexer: *Lexer, allocator: Allocator) ParseError!LambdaNode {
     var next = lexer.next() orelse return error.InvalidSyntax;
     if (next.* != .typeAssignment) return error.InvalidSyntax;
 
-    const ty = try parseTypeNode(lexer, allocator);
+    var ty = try parseTypeNode(lexer, allocator);
+    errdefer ty.deinit(allocator);
 
     next = lexer.next() orelse return error.InvalidSyntax;
     if (next.* != .dot) return error.InvalidSyntax;
@@ -111,6 +117,7 @@ fn parseLambdaNode(lexer: *Lexer, allocator: Allocator) ParseError!LambdaNode {
     var body = try allocator.create(AstNode);
     errdefer allocator.destroy(body);
     body.* = try parseAstNode(lexer, allocator);
+    errdefer body.deinit(allocator);
 
     next = lexer.next() orelse return error.InvalidSyntax;
     if (next.* != .absEnd) return error.InvalidSyntax;
@@ -143,7 +150,7 @@ fn parseAplNode(lexer: *Lexer, allocator: Allocator) ParseError!AplNode {
 test "parse test" {
     const alloc = @import("std").testing.allocator;
     const slice =
-        "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . ( f ( pred n ) ) end end iszero ) 42 )";
+        "( ( lambda f : ( Nat -> Bool ) . lambda n : Nat . if ( iszero n ) then ( f n ) else ( f ( pred n ) ) endif end end iszero ) 42 )";
 
     var lexer = try Lexer.tokenize(slice, alloc);
     defer lexer.deinit();
