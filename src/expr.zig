@@ -4,11 +4,7 @@ const alloc = std.testing.allocator;
 const Allocator = std.mem.Allocator;
 const expect = std.testing.expect;
 const expectError = std.testing.expectError;
-const types = @import("types.zig");
-const Type = types.Type;
-const FnType = types.FnType;
-
-const TypeError = error{ InvalidType, OutOfMemory };
+const Type = @import("types.zig").Type;
 
 /// Lambda calculus expression.
 pub const Expr = union(enum) {
@@ -17,21 +13,12 @@ pub const Expr = union(enum) {
     apl: AplExpr,
     val: Val,
 
-    pub fn getType(self: *Expr, allocator: Allocator) TypeError!Type {
-        return switch (self.*) {
-            .ifelse => |exp| exp.getType(allocator),
-            .variable => |exp| exp.getType(),
-            .apl => |exp| exp.getType(allocator),
-            .val => |*exp| exp.getType(allocator),
-        };
-    }
-
     pub fn deinit(self: *Expr, allocator: Allocator) void {
         switch (self.*) {
             .ifelse => |*ifexpr| ifexpr.deinit(allocator),
-            .variable => |*v| v.deinit(allocator),
             .apl => |*aplexpr| aplexpr.deinit(allocator),
             .val => |*v| v.deinit(allocator),
+            .variable => {},
         }
     }
 
@@ -60,32 +47,17 @@ pub const Expr = union(enum) {
 /// Variable
 pub const Var = struct {
     name: []const u8,
-    ty: *Type,
 
-    pub fn init(name: []const u8, ty: *Type) Var {
-        return Var{ .name = name, .ty = ty };
-    }
-
-    pub fn deinit(self: *Var, allocator: Allocator) void {
-        self.ty.deinit(allocator);
-        // allocator.destroy(self.ty);
+    pub fn init(name: []const u8) Var {
+        return Var{ .name = name };
     }
 
     pub fn intoExpr(self: Var) Expr {
         return Expr{ .variable = self };
     }
 
-    pub fn getType(self: *const Var) Type {
-        return self.ty.*;
-    }
-
-    pub fn getTypePtr(self: *Var) *Type {
-        return self.ty;
-    }
-
     pub fn eql(self: *const Var, other: *const Var) bool {
-        return (std.mem.eql(u8, self.name, other.name)) and
-            (self.ty.eql(other.ty));
+        return (std.mem.eql(u8, self.name, other.name));
     }
 };
 
@@ -112,14 +84,6 @@ pub const Val = union(enum) {
 
     pub fn intoExpr(self: Val) Expr {
         return Expr{ .val = self };
-    }
-
-    pub fn getType(self: *Val, allocator: Allocator) TypeError!Type {
-        return switch (self.*) {
-            .nat => Type.nat,
-            .boolean => Type.boolean,
-            .fun => |*f| f.getType(allocator),
-        };
     }
 
     pub fn eql(self: *const Val, other: *const Val) bool {
@@ -155,26 +119,6 @@ pub const Fn = union(enum) {
         return Expr{ .val = self.intoValue() };
     }
 
-    pub fn getType(self: *Fn, allocator: Allocator) TypeError!Type {
-        switch (self.*) {
-            .suc, .pred => {
-                var nat_in = try Type.natPtr(allocator);
-                errdefer allocator.destroy(nat_in);
-                var nat_out = try Type.natPtr(allocator);
-                errdefer allocator.destroy(nat_out);
-                return FnType.init(nat_in, nat_out).intoType();
-            },
-            .iszero => {
-                var nat_in = try Type.natPtr(allocator);
-                errdefer allocator.destroy(nat_in);
-                var boolean_out = try Type.boolPtr(allocator);
-                errdefer allocator.destroy(boolean_out);
-                return FnType.init(nat_in, boolean_out).intoType();
-            },
-            .abs => |*abs| return abs.getType(allocator),
-        }
-    }
-
     pub fn eql(self: *const Fn, other: *const Fn) bool {
         return switch (self.*) {
             .suc => if (other.* == .suc) true else false,
@@ -198,14 +142,14 @@ pub const Fn = union(enum) {
 /// Abstraction value
 pub const Abs = struct {
     v: Var,
+    v_type: *const Type,
     term: *Expr,
 
-    pub fn init(v: Var, term: *Expr) Abs {
-        return Abs{ .v = v, .term = term };
+    pub fn init(v: Var, v_type: *const Type, term: *Expr) Abs {
+        return Abs{ .v = v, .v_type = v_type, .term = term };
     }
 
     pub fn deinit(self: *Abs, allocator: Allocator) void {
-        self.v.deinit(alloc);
         self.term.deinit(allocator);
         allocator.destroy(self.term);
     }
@@ -222,16 +166,6 @@ pub const Abs = struct {
                 .fun = Fn{ .abs = self },
             },
         };
-    }
-
-    pub fn getType(self: *Abs, allocator: Allocator) TypeError!Type {
-        var t = self.v.getTypePtr();
-
-        var u = try allocator.create(Type);
-        errdefer allocator.destroy(u);
-        u.* = try self.term.getType(allocator);
-
-        return FnType.init(t, u).intoType();
     }
 
     pub fn eql(self: *const Abs, other: *const Abs) bool {
@@ -268,16 +202,6 @@ pub const IfExpr = struct {
         return Expr{ .ifelse = self };
     }
 
-    pub fn getType(self: *const IfExpr, allocator: Allocator) TypeError!Type {
-        const prop_type = try self.prop.*.getType(allocator);
-        const t_type = try self.t.*.getType(allocator);
-        const u_type = try self.u.*.getType(allocator);
-        if (prop_type == .boolean and t_type.eql(&u_type)) {
-            return t_type;
-        }
-        return error.InvalidType;
-    }
-
     pub fn eql(self: *const IfExpr, other: *const IfExpr) bool {
         return (self.*.prop.*.eql(other.*.prop)) and
             (self.*.t.*.eql(other.*.t)) and
@@ -304,24 +228,6 @@ pub const AplExpr = struct {
 
     pub fn intoExpr(self: AplExpr) Expr {
         return Expr{ .apl = self };
-    }
-
-    pub fn getType(self: *const AplExpr, allocator: Allocator) TypeError!Type {
-        var arg_type = try self.arg.*.getType(allocator);
-        defer arg_type.deinit(alloc);
-
-        var f = try self.f.*.getType(allocator);
-        defer f.deinit(alloc);
-
-        const f_type = switch (f) {
-            .fun => |t| t,
-            else => return error.InvalidType,
-        };
-
-        if (f_type.in.*.eql(&arg_type)) {
-            return f_type.out.*;
-        }
-        return error.InvalidType;
     }
 
     pub fn eql(self: *const AplExpr, other: *const AplExpr) bool {
@@ -351,42 +257,23 @@ test "boolean value test" {
     }
 }
 test "variable test" {
-    var nat_ptr = try Type.natPtr(alloc);
-    defer alloc.destroy(nat_ptr);
-    var x = Var.init("x", nat_ptr);
-    defer x.deinit(alloc);
+    var x = Var.init("x");
     try expect(std.mem.eql(u8, x.name, "x"));
-    try expect(x.ty.* == Type.nat);
 }
 test "variable equality test" {
-    var x1 = Var.init("x", try Type.natPtr(alloc));
-    defer alloc.destroy(x1.ty);
-    defer x1.deinit(alloc);
-    var x2 = Var.init("x", try Type.natPtr(alloc));
-    defer alloc.destroy(x2.ty);
-    defer x2.deinit(alloc);
-    var x3 = Var.init("x", try Type.boolPtr(alloc));
-    defer alloc.destroy(x3.ty);
-    defer x3.deinit(alloc);
-    var y = Var.init("y", try Type.natPtr(alloc));
-    defer alloc.destroy(y.ty);
-    defer y.deinit(alloc);
+    var x1 = Var.init("x");
+    var y = Var.init("y");
 
-    try expect(x1.eql(&x2));
-    try expect(x2.eql(&x1));
-
-    try expect(!x1.eql(&x3));
-    try expect(!x3.eql(&x1));
     try expect(!x1.eql(&y));
     try expect(!y.eql(&x1));
 }
+
 test "abstraction value test" {
-    var x = Var.init("x", try Type.natPtr(alloc));
-    defer alloc.destroy(x.ty);
-    defer x.deinit(alloc);
+    var x = Var.init("x");
+    var nat = @as(Type, .nat);
 
     var x_expr = x.intoExpr();
-    const expr = Abs.init(x, &x_expr).intoExpr();
+    const expr = Abs.init(x, &nat, &x_expr).intoExpr();
     switch (expr) {
         .val => |v| switch (v) {
             .fun => |f| switch (f) {
@@ -430,137 +317,4 @@ test "aplexpr test" {
         },
         else => return error.InvalidExprType,
     }
-}
-
-test "nat value type test" {
-    var n = Val.initNat(2).intoExpr();
-    var ty = try n.getType(alloc);
-    defer ty.deinit(alloc);
-    try expect(ty == Type.nat);
-}
-
-test "boolean type test" {
-    var b = Val.initBoolean(false).intoExpr();
-    var ty = try b.getType(alloc);
-    defer ty.deinit(alloc);
-    try expect(ty == Type.boolean);
-}
-
-test "function type test" {
-    // create types
-    var nat_nat = FnType.init(try Type.natPtr(alloc), try Type.natPtr(alloc))
-        .intoType();
-    defer nat_nat.deinit(alloc);
-    var nat_bool = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
-        .intoType();
-    defer nat_bool.deinit(alloc);
-
-    // testing
-    var suc = @as(Fn, Fn.suc).intoExpr();
-    var suc_ty = try suc.getType(alloc);
-    defer suc_ty.deinit(alloc);
-    try expect(suc_ty.eql(&nat_nat));
-
-    var pred = @as(Fn, Fn.pred).intoExpr();
-    var pred_ty = try pred.getType(alloc);
-    defer pred_ty.deinit(alloc);
-    try expect(pred_ty.eql(&nat_nat));
-
-    var iszero = @as(Fn, Fn.iszero).intoExpr();
-    var iszero_ty = try iszero.getType(alloc);
-    defer iszero_ty.deinit(alloc);
-
-    try expect(iszero_ty.eql(&nat_bool));
-}
-
-test "abstraction type test" {
-    var x_nat = Var.init("x", try Type.natPtr(alloc));
-
-    var x_nat_expr = x_nat.intoExpr();
-    // defer x_nat_expr.deinit(alloc);
-    var abs1 = Abs.init(x_nat, &x_nat_expr).intoExpr();
-    // defer abs1.deinit(alloc);
-    var abs1_ty = try abs1.getType(alloc);
-    defer abs1_ty.deinit(alloc);
-
-    var expected_abs1_ty =
-        FnType.init(try Type.natPtr(alloc), try Type.natPtr(alloc)).intoType();
-    defer expected_abs1_ty.deinit(alloc);
-    try expect(abs1_ty.eql(&expected_abs1_ty));
-
-    var two = Val.initBoolean(true).intoExpr();
-    var abs2 = Abs.init(Var.init("x", try Type.natPtr(alloc)), &two).intoExpr();
-    var abs2_ty = try abs2.getType(alloc);
-    defer abs2_ty.deinit(alloc);
-
-    var expected_abs2_ty =
-        FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc)).intoType();
-    defer expected_abs2_ty.deinit(alloc);
-    try expect(abs2_ty.eql(&expected_abs2_ty));
-}
-
-test "ifexpr type test" {
-    var nat = @as(Type, Type.nat);
-    var prop = Val.initBoolean(true).intoExpr();
-    var two = Val.initNat(2).intoExpr();
-    var four = Val.initNat(4).intoExpr();
-    var falseVal = Val.initBoolean(false).intoExpr();
-
-    var if1 = IfExpr.init(&prop, &two, &four);
-    var if1_ty = try if1.getType(alloc);
-    defer if1_ty.deinit(alloc);
-    try expect(if1_ty.eql(&nat));
-
-    var if2 = IfExpr.init(&prop, &two, &falseVal);
-    try expectError(error.InvalidType, if2.getType(alloc));
-}
-
-test "aplexpr type test" {
-    var nat = @as(Type, Type.nat);
-    var boolean = @as(Type, Type.boolean);
-
-    var iszero = @as(Fn, Fn.iszero).intoExpr();
-    var suc = @as(Fn, Fn.suc).intoExpr();
-
-    var four = Val.initNat(4).intoExpr();
-    var zero = Val.initNat(0).intoExpr();
-    var falseVal = Val.initBoolean(false).intoExpr();
-    var trueVal = Val.initBoolean(true).intoExpr();
-
-    var apl1 = AplExpr.init(&iszero, &four).intoExpr();
-    var apl1_ty = try apl1.getType(alloc);
-    defer apl1_ty.deinit(alloc);
-    try expect(apl1_ty.eql(&boolean));
-
-    var apl2 = AplExpr.init(&iszero, &falseVal)
-        .intoExpr();
-    try expectError(error.InvalidType, apl2.getType(alloc));
-
-    var apl3 = AplExpr.init(&suc, &zero)
-        .intoExpr();
-    var apl3_ty = try apl3.getType(alloc);
-    defer apl3_ty.deinit(alloc);
-    try expect(apl3_ty.eql(&nat));
-
-    var apl4 = AplExpr.init(&suc, &trueVal)
-        .intoExpr();
-    try expectError(error.InvalidType, apl4.getType(alloc));
-}
-
-test "nested expr test" {
-    // construct expression: (lambda x: Nat. iszero x)
-    var iszero = @as(Fn, Fn.iszero).intoExpr();
-    var x = Var.init("x", try Type.natPtr(alloc));
-    var x_expr = x.intoExpr();
-    var apl = AplExpr.init(&iszero, &x_expr).intoExpr();
-    var abs = Abs.init(x, &apl).intoExpr();
-
-    var abs_ty = try abs.getType(alloc);
-    defer abs_ty.deinit(alloc);
-
-    // Nat -> Boolean
-    var expected_type = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
-        .intoType();
-    defer expected_type.deinit(alloc);
-    try expect(abs_ty.eql(&expected_type));
 }

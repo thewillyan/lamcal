@@ -1,151 +1,144 @@
 const Allocator = @import("std").mem.Allocator;
 
+const expr = @import("expr.zig");
 const Token = @import("lexer.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
-
-const Ast = @import("ast.zig").Ast;
-const AstNode = @import("ast.zig").AstNode;
-const LiteralNode = @import("ast.zig").LiteralNode;
-const TypeNode = @import("ast.zig").TypeNode;
-const BaseType = @import("ast.zig").BaseType;
-const ArrowType = @import("ast.zig").ArrowType;
-const IfNode = @import("ast.zig").IfNode;
-const LambdaNode = @import("ast.zig").LambdaNode;
-const AplNode = @import("ast.zig").AplNode;
+const Context = @import("context.zig").Context;
+const Type = @import("types.zig").Type;
+const FnType = @import("types.zig").FnType;
 
 const ParseError = error{ InvalidSyntax, OutOfMemory };
 
-pub fn parse(lexer: *Lexer, allocator: Allocator) ParseError!Ast {
-    const root = try parseAstNode(lexer, allocator);
-    return Ast.init(root, allocator);
-}
+pub const Parser = struct {
+    allocator: Allocator,
 
-pub fn parseAstNode(lexer: *Lexer, allocator: Allocator) ParseError!AstNode {
-    const curr_token = lexer.*.next() orelse return error.InvalidSyntax;
-
-    const node = try switch (curr_token.*) {
-        .ifStart => AstNode{ .ifNode = try parseIfNode(lexer, allocator) },
-        .lambda => AstNode{ .lambda = try parseLambdaNode(lexer, allocator) },
-        .blockStart => AstNode{ .apl = try parseAplNode(lexer, allocator) },
-        .trueVal => AstNode{ .literal = LiteralNode.initBool(true) },
-        .falseVal => AstNode{ .literal = LiteralNode.initBool(false) },
-        .nat => |n| AstNode{ .literal = LiteralNode.initNat(n) },
-        .variable => |name| AstNode{ .literal = LiteralNode.initVar(name) },
-        .pred => AstNode{ .literal = LiteralNode.initPredLiteral() },
-        .suc => AstNode{ .literal = LiteralNode.initSucLiteral() },
-        .iszero => AstNode{ .literal = LiteralNode.initIsZeroLiteral() },
-        else => error.InvalidSyntax,
-    };
-    return node;
-}
-
-fn parseIfNode(lexer: *Lexer, allocator: Allocator) ParseError!IfNode {
-    var p = try allocator.create(AstNode);
-    errdefer allocator.destroy(p);
-    p.* = try parseAstNode(lexer, allocator);
-    errdefer p.*.deinit(allocator);
-
-    var next = lexer.next() orelse return error.InvalidSyntax;
-    if (next.* != .ifThen) return error.InvalidSyntax;
-
-    var t = try allocator.create(AstNode);
-    errdefer allocator.destroy(t);
-    t.* = try parseAstNode(lexer, allocator);
-    errdefer t.*.deinit(allocator);
-
-    next = lexer.next() orelse return error.InvalidSyntax;
-    if (next.* != .ifElse) return error.InvalidSyntax;
-
-    var o = try allocator.create(AstNode);
-    errdefer allocator.destroy(o);
-    o.* = try parseAstNode(lexer, allocator);
-    errdefer o.*.deinit(allocator);
-
-    next = lexer.next() orelse return error.InvalidSyntax;
-    return if (next.* != .ifEnd)
-        error.InvalidSyntax
-    else
-        IfNode{ .p = p, .then = t, .otherwise = o };
-}
-
-fn parseTypeNode(lexer: *Lexer, allocator: Allocator) ParseError!TypeNode {
-    const tk = lexer.next() orelse return error.InvalidSyntax;
-
-    switch (tk.*) {
-        .natType => return TypeNode.initBase(BaseType.nat),
-        .boolType => return TypeNode.initBase(BaseType.boolean),
-        .blockStart => {
-            var in = try allocator.create(TypeNode);
-            errdefer allocator.destroy(in);
-            in.* = try parseTypeNode(lexer, allocator);
-            errdefer in.deinit(allocator);
-
-            var next = lexer.next() orelse return error.InvalidSyntax;
-            if (next.* != .arrow) return error.InvalidSyntax;
-
-            var out = try allocator.create(TypeNode);
-            errdefer allocator.destroy(out);
-            out.* = try parseTypeNode(lexer, allocator);
-            errdefer out.deinit(allocator);
-
-            next = lexer.next() orelse return error.InvalidSyntax;
-            if (next.* != .blockEnd) return error.InvalidSyntax;
-
-            return TypeNode.initArrow(in, out);
-        },
-        else => return error.InvalidSyntax,
+    pub fn init(allocator: Allocator) Parser {
+        return Parser{ .allocator = allocator };
     }
-}
 
-fn parseLambdaNode(lexer: *Lexer, allocator: Allocator) ParseError!LambdaNode {
-    const var_name = if (lexer.next()) |tk| name: {
-        switch (tk.*) {
-            .variable => |name| break :name name,
+    pub fn parseTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.Expr {
+        const curr_token = lexer.*.next() orelse return error.InvalidSyntax;
+
+        const exp = try switch (curr_token.*) {
+            .ifStart => (try self.parseIfTokens(lexer, context)).intoExpr(),
+            .lambda => (try self.parseLambdaTokens(lexer, context)).intoExpr(),
+            .blockStart => (try self.parseAplTokens(lexer, context)).intoExpr(),
+            .trueVal => expr.Val.initBoolean(true).intoExpr(),
+            .falseVal => expr.Val.initBoolean(false).intoExpr(),
+            .nat => |n| expr.Val.initNat(n).intoExpr(),
+            .variable => |name| expr.Var.init(name).intoExpr(),
+            .pred => @as(expr.Fn, .pred).intoExpr(),
+            .suc => @as(expr.Fn, .suc).intoExpr(),
+            .iszero => @as(expr.Fn, .iszero).intoExpr(),
+            else => error.InvalidSyntax,
+        };
+        errdefer exp.deinit(self.allocator);
+        return exp;
+    }
+
+    fn parseIfTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.IfExpr {
+        var prop = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(prop);
+        prop.* = try self.parseTokens(lexer, context);
+        errdefer prop.deinit(self.allocator);
+
+        var next = lexer.next() orelse return error.InvalidSyntax;
+        if (next.* != .ifThen) return error.InvalidSyntax;
+
+        var t = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(t);
+        t.* = try self.parseTokens(lexer, context);
+        errdefer t.deinit(self.allocator);
+
+        next = lexer.next() orelse return error.InvalidSyntax;
+        if (next.* != .ifElse) return error.InvalidSyntax;
+
+        var u = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(u);
+        u.* = try self.parseTokens(lexer, context);
+        errdefer u.deinit(self.allocator);
+
+        next = lexer.next() orelse return error.InvalidSyntax;
+        return if (next.* != .ifEnd)
+            error.InvalidSyntax
+        else
+            expr.IfExpr.init(prop, t, u);
+    }
+
+    fn parseTypeTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!*const Type {
+        const tk = lexer.next() orelse return error.InvalidSyntax;
+
+        return switch (tk.*) {
+            .natType => context.natPtr(),
+            .boolType => context.booleanPtr(),
+            .blockStart => blk: {
+                const in = try self.parseTypeTokens(lexer, context);
+                errdefer self.allocator.destroy(in);
+
+                var next = lexer.next() orelse return error.InvalidSyntax;
+                if (next.* != .arrow) return error.InvalidSyntax;
+
+                const out = try self.parseTypeTokens(lexer, context);
+                errdefer self.allocator.destroy(out);
+
+                next = lexer.next() orelse return error.InvalidSyntax;
+                if (next.* != .blockEnd) return error.InvalidSyntax;
+
+                var ty_ptr = try context.createTypePtr(FnType.init(in, out).intoType());
+                errdefer self.allocator.destroy(ty_ptr);
+                break :blk ty_ptr;
+            },
             else => return error.InvalidSyntax,
-        }
-    } else return error.InvalidSyntax;
+        };
+    }
 
-    var next = lexer.next() orelse return error.InvalidSyntax;
-    if (next.* != .typeAssignment) return error.InvalidSyntax;
+    fn parseLambdaTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.Abs {
+        const v = if (lexer.next()) |tk| name: {
+            switch (tk.*) {
+                .variable => |name| break :name expr.Var.init(name),
+                else => return error.InvalidSyntax,
+            }
+        } else return error.InvalidSyntax;
 
-    var ty = try parseTypeNode(lexer, allocator);
-    errdefer ty.deinit(allocator);
+        var next = lexer.next() orelse return error.InvalidSyntax;
+        if (next.* != .typeAssignment) return error.InvalidSyntax;
 
-    next = lexer.next() orelse return error.InvalidSyntax;
-    if (next.* != .dot) return error.InvalidSyntax;
+        const ty = try self.parseTypeTokens(lexer, context);
+        errdefer self.allocator.destroy(ty);
 
-    var body = try allocator.create(AstNode);
-    errdefer allocator.destroy(body);
-    body.* = try parseAstNode(lexer, allocator);
-    errdefer body.deinit(allocator);
+        next = lexer.next() orelse return error.InvalidSyntax;
+        if (next.* != .dot) return error.InvalidSyntax;
 
-    next = lexer.next() orelse return error.InvalidSyntax;
-    if (next.* != .absEnd) return error.InvalidSyntax;
+        var term = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(term);
+        term.* = try self.parseTokens(lexer, context);
+        errdefer term.deinit(self.allocator);
 
-    return LambdaNode{
-        .var_name = var_name,
-        .ty = ty,
-        .body = body,
-    };
-}
+        errdefer self.allocator.destroy(term);
 
-fn parseAplNode(lexer: *Lexer, allocator: Allocator) ParseError!AplNode {
-    var f = try allocator.create(AstNode);
-    errdefer allocator.destroy(f);
-    f.* = try parseAstNode(lexer, allocator);
+        next = lexer.next() orelse return error.InvalidSyntax;
+        if (next.* != .absEnd) return error.InvalidSyntax;
 
-    var arg = try allocator.create(AstNode);
-    errdefer allocator.destroy(arg);
-    arg.* = try parseAstNode(lexer, allocator);
+        return expr.Abs.init(v, ty, term);
+    }
 
-    const end = lexer.next() orelse return error.InvalidSyntax;
-    if (end.* != .blockEnd) return error.InvalidSyntax;
+    fn parseAplTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.AplExpr {
+        var f = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(f);
+        f.* = try self.parseTokens(lexer, context);
+        errdefer f.deinit(self.allocator);
 
-    return AplNode{
-        .f = f,
-        .arg = arg,
-    };
-}
+        var arg = try self.allocator.create(expr.Expr);
+        errdefer self.allocator.destroy(arg);
+        arg.* = try self.parseTokens(lexer, context);
+        errdefer arg.deinit(self.allocator);
+
+        const end = lexer.next() orelse return error.InvalidSyntax;
+        if (end.* != .blockEnd) return error.InvalidSyntax;
+
+        return expr.AplExpr.init(f, arg);
+    }
+};
 
 test "parse test" {
     const alloc = @import("std").testing.allocator;
@@ -155,7 +148,11 @@ test "parse test" {
     var lexer = try Lexer.tokenize(slice, alloc);
     defer lexer.deinit();
 
-    var ast = try parse(&lexer, alloc);
-    defer ast.deinit();
-    // TODO: Check equality
+    var context = try Context.init(alloc);
+    defer context.deinit();
+
+    var parser = Parser.init(alloc);
+
+    var exp = try parser.parseTokens(&lexer, &context);
+    defer exp.deinit(alloc);
 }

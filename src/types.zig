@@ -38,12 +38,12 @@ pub const Type = union(enum) {
         };
     }
 
-    pub fn deinit(self: *Type, allocator: Allocator) void {
-        switch (self.*) {
-            .fun => |*fun| fun.deinit(allocator),
-            else => {},
-        }
-    }
+    // pub fn deinit(self: *Type, allocator: Allocator) void {
+    //     switch (self.*) {
+    //         .fun => |*fun| fun.deinit(allocator),
+    //         else => {},
+    //     }
+    // }
 
     pub fn deinitContext(context: anytype, allocator: Allocator) void {
         var iter = context.iterator();
@@ -58,22 +58,14 @@ pub const Type = union(enum) {
 };
 
 pub const FnType = struct {
-    in: *Type,
-    out: *Type,
+    in: *const Type,
+    out: *const Type,
 
-    pub fn init(in: *Type, out: *Type) FnType {
+    pub fn init(in: *const Type, out: *const Type) FnType {
         return FnType{
             .in = in,
             .out = out,
         };
-    }
-
-    pub fn deinit(self: *FnType, allocator: Allocator) void {
-        self.in.deinit(allocator);
-        self.out.deinit(allocator);
-
-        allocator.destroy(self.in);
-        allocator.destroy(self.out);
     }
 
     pub fn intoType(self: FnType) Type {
@@ -84,27 +76,6 @@ pub const FnType = struct {
         return (self.in.*.eql(other.in) and self.out.*.eql(other.out));
     }
 };
-
-test "types test" {
-    var f1 = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
-        .intoType();
-    defer f1.deinit(alloc);
-
-    var f2 = FnType.init(try Type.natPtr(alloc), try Type.boolPtr(alloc))
-        .intoType();
-    defer f2.deinit(alloc);
-
-    var f3 = FnType.init(try Type.boolPtr(alloc), try Type.boolPtr(alloc))
-        .intoType();
-    defer f3.deinit(alloc);
-
-    var f4 = FnType.init(&f2, &f2).intoType();
-    // verify types
-    try std.testing.expect(f1 == .fun);
-    try std.testing.expect(f2 == .fun);
-    try std.testing.expect(f3 == .fun);
-    try std.testing.expect(f4 == .fun);
-}
 
 test "type equality test" {
     var n: Type = Type.nat;
