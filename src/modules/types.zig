@@ -38,22 +38,17 @@ pub const Type = union(enum) {
         };
     }
 
-    // pub fn deinit(self: *Type, allocator: Allocator) void {
-    //     switch (self.*) {
-    //         .fun => |*fun| fun.deinit(allocator),
-    //         else => {},
-    //     }
-    // }
-
-    pub fn deinitContext(context: anytype, allocator: Allocator) void {
-        var iter = context.iterator();
-        while (iter.next()) |entry| {
-            for (entry.value_ptr.*.items) |ty_ptr| {
-                ty_ptr.*.deinit(allocator);
-                allocator.destroy(ty_ptr);
-            }
-            entry.value_ptr.*.deinit();
-        }
+    pub fn format(
+        self: Type,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try switch (self) {
+            .nat => writer.print("Nat", .{}),
+            .boolean => writer.print("Bool", .{}),
+            .fun => |fnty| fnty.format(fmt, options, writer),
+        };
     }
 };
 
@@ -74,6 +69,17 @@ pub const FnType = struct {
 
     pub fn eql(self: *const FnType, other: *const FnType) bool {
         return (self.in.*.eql(other.in) and self.out.*.eql(other.out));
+    }
+
+    pub fn format(
+        self: FnType,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("( {s} -> {s} )", .{ self.in.*, self.out.* });
     }
 };
 

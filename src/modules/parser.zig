@@ -32,7 +32,7 @@ pub const Parser = struct {
             .iszero => @as(expr.Fn, .iszero).intoExpr(),
             else => error.InvalidSyntax,
         };
-        errdefer exp.deinit(self.allocator);
+        // errdefer exp.deinit(self.allocator);
         return exp;
     }
 
@@ -104,7 +104,6 @@ pub const Parser = struct {
         if (next.* != .typeAssignment) return error.InvalidSyntax;
 
         const ty = try self.parseTypeTokens(lexer, context);
-        errdefer self.allocator.destroy(ty);
 
         next = lexer.next() orelse return error.InvalidSyntax;
         if (next.* != .dot) return error.InvalidSyntax;
@@ -113,8 +112,6 @@ pub const Parser = struct {
         errdefer self.allocator.destroy(term);
         term.* = try self.parseTokens(lexer, context);
         errdefer term.deinit(self.allocator);
-
-        errdefer self.allocator.destroy(term);
 
         next = lexer.next() orelse return error.InvalidSyntax;
         if (next.* != .absEnd) return error.InvalidSyntax;

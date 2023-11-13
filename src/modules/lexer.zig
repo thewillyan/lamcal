@@ -32,13 +32,13 @@ pub const Token = union(enum) {
     typeAssignment,
     variable: []const u8,
 
-    pub fn tryFromSlice(str: []const u8) !Token {
+    pub fn tryFromSlice(str: []const u8) error{InvalidSlice}!Token {
         const slice = std.mem.trim(u8, str, " ");
 
         const parse_res: ?u32 = std.fmt.parseInt(u32, slice, 10) catch null;
         if (parse_res) |n| return Token{ .nat = n };
 
-        const token: anyerror!Token = if (std.mem.eql(u8, slice, "true"))
+        return if (std.mem.eql(u8, slice, "true"))
             .trueVal
         else if (std.mem.eql(u8, slice, "false"))
             .falseVal
@@ -78,7 +78,6 @@ pub const Token = union(enum) {
             Token{ .variable = slice }
         else
             error.InvalidSlice;
-        return token;
     }
 
     pub fn eql(self: *const Token, other: *const Token) bool {
@@ -150,7 +149,7 @@ pub const Lexer = struct {
     tokens: ArrayList(Token),
     index: usize,
 
-    pub fn tokenize(str: []const u8, allocator: Allocator) !Lexer {
+    pub fn tokenize(str: []const u8, allocator: Allocator) error{ OutOfMemory, InvalidSlice }!Lexer {
         var slices = std.mem.split(u8, std.mem.trim(u8, str, " "), " ");
         var token_list = try ArrayList(Token)
             .initCapacity(allocator, slices.buffer.len);
@@ -197,8 +196,7 @@ test "lexer test" {
         Token{ .nat = 42 },       .blockEnd,
     };
 
-    var alloc = gpa(.{}){};
-    var lexer = try Lexer.tokenize(slice, alloc.allocator());
+    var lexer = try Lexer.tokenize(slice, std.testing.allocator);
     defer lexer.deinit();
     var i: usize = 0;
     while (lexer.next()) |token| : (i += 1) {
