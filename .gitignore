@@ -1,2 +1,5 @@
 zig-out/*
 zig-cache/*
+
+# env manager (asdf like)
+.rtx.toml
