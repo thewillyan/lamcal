@@ -35,7 +35,7 @@ pub fn main() !void {
     var lexer = Lexer.tokenize(input, gpa.allocator()) catch |err| {
         switch (err) {
             error.InvalidSlice => {
-                try stdout.writer().print("!", .{});
+                try stdout.writer().print("!\n", .{});
                 std.os.exit(1);
             },
             else => return err,
@@ -48,10 +48,10 @@ pub fn main() !void {
 
     var parser = Parser.init(gpa.allocator());
 
-    var exp = parser.parseTokens(&lexer, &context) catch |err| {
+    var exp = parser.parse(&lexer, &context) catch |err| {
         switch (err) {
             error.InvalidSyntax => {
-                try stdout.writer().print("!", .{});
+                try stdout.writer().print("!\n", .{});
                 std.os.exit(1);
             },
             else => return err,
@@ -62,12 +62,11 @@ pub fn main() !void {
     const ty = context.getExprType(&exp) catch |err| {
         switch (err) {
             error.InvalidType, error.UnboundVariable => {
-                try stdout.writer().print("-", .{});
+                try stdout.writer().print("-\n", .{});
                 std.os.exit(1);
             },
             else => return err,
         }
     };
-
-    try stdout.writer().print("{s}", .{ty});
+    try stdout.writer().print("{s}\n", .{ty});
 }
