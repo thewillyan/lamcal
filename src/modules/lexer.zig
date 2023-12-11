@@ -62,7 +62,7 @@ pub const Token = union(enum) {
             .suc
         else if (std.mem.eql(u8, slice, "pred"))
             .pred
-        else if (std.mem.eql(u8, slice, "iszero"))
+        else if (std.mem.eql(u8, slice, "iszero") or std.mem.eql(u8, slice, "ehzero"))
             .iszero
         else if (std.mem.eql(u8, slice, "lambda"))
             .lambda

@@ -16,6 +16,12 @@ pub const Parser = struct {
         return Parser{ .allocator = allocator };
     }
 
+    /// Parse a lambda calculus expression from an [Lexer](lexer.zig)
+    pub fn parse(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.Expr {
+        const final_expr = try self.parseTokens(lexer, context);
+        return if (lexer.next() == null) final_expr else error.InvalidSyntax;
+    }
+
     pub fn parseTokens(self: *Parser, lexer: *Lexer, context: *Context) ParseError!expr.Expr {
         const curr_token = lexer.*.next() orelse return error.InvalidSyntax;
 

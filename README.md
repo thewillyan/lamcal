@@ -20,3 +20,13 @@ stdin and printing one of the following:
 1. `!`, if the expression has a syntax error.
 2. `-`, if the expreession results in a type error.
 3. The type T, if the expression is valid lambda calculus expression.
+
+An expression looks something like this:
+
+```
+( lambda n : Nat . if ( iszero n ) then false else true endif end 4 )
+```
+
+And remenber, in lambda calculus **functions are values**. The function  type
+syntax is `( Type  -> Type )`, where `Type` can be any type
+(including a function type).
